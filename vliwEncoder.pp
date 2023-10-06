@@ -48,11 +48,10 @@ void printOutput(const char* fname, std::vector<std::string> encodedVLIW)
     outfile.close();
 }
 
+
 /*
-TODO : Write any helper functions that you may need here. 
-
+Gets the syllable from the file line
 */
-
 std::string parseIndividualInst(std::string line) {
     size_t endPos = line.find("##");
     size_t startPos = 6;
@@ -65,8 +64,6 @@ std::string parseIndividualInst(std::string line) {
     size_t end = first_strip.find_last_not_of(" \t\n\r");
 
     std::string trimmedString = first_strip.substr(start, end - start + 1);
-    
-    std::cout << trimmedString << "b" << std::endl;
 
     return trimmedString;
 }
@@ -84,14 +81,16 @@ std::vector<std::string>  maskedVLIW(std::vector<std::string> instructions)
     std::vector<std::string> syllables; //list of syllables for next instruction
     std::string mask = "";  // mask for each instruction
 
-    /* TODO : Implement your code here */
+    // iterate through all instructions
     for (std::string instruction : instructions) {
-        // Check if it is ";;" for end of inst
+        // create the encoded instruction every ;; in original file
         std::string firstTwoChars = instruction.substr(0, 2);
         if (firstTwoChars == ";;") {
+            // first add instruction delim
             std::string encoded_inst = "c0\t";
-            encoded_inst += mask;
+            encoded_inst += mask;  // add that mask before syllables
             encoded_inst += "\t";
+            // append each of the syllables found
             for (std::string non_nop_inst : syllables) {
                 encoded_inst += non_nop_inst;
                 encoded_inst += "\t";
@@ -104,6 +103,7 @@ std::vector<std::string>  maskedVLIW(std::vector<std::string> instructions)
             mask = "";
         }
 
+        // processing instructions to make mask
         else {
             std::string inst =  parseIndividualInst(instruction);
 
@@ -116,10 +116,6 @@ std::vector<std::string>  maskedVLIW(std::vector<std::string> instructions)
             }
         }
 
-    }
-
-    for (std::string i : encodedVLIW) {
-        std::cout << i << std::endl;
     }
 
     return encodedVLIW;
@@ -136,8 +132,122 @@ std::vector<std::string>  templateVLIW(std::vector<std::string> instructions)
 {
     std::vector<std::string> encodedVLIW;
 
-    /* TODO : Implement your code here */
+    // First check how wide the VLIW is by iterating until end of first instruct
+    int vliw_width = 0;
+    for (std::string instruction : instructions) {
+        std::string firstTwoChars = instruction.substr(0, 2);
+        if (firstTwoChars == ";;") {
+            break;
+        }
+        else {
+            vliw_width += 1;
+        }
+    }  // vliw width determines the number of bits needed for mask
 
+    // Now begin going through instructions and building templates
+    std::vector<std::string> syllables; //list of syllables for next instruction
+    std::string mask = "";  // mask for each instruction
+    int instruction_index = 0;
+    int last_instruction_index = 0;
+
+    for (std::string instruction : instructions) {
+        // Check if it is ";;" for end of inst
+        std::string firstTwoChars = instruction.substr(0, 2);
+        if (firstTwoChars == ";;") {
+            // Handle the all NOP case for the mask
+            if (mask == "") {
+                if (vliw_width == 4) {
+                    mask = "00";
+                }
+                else if (vliw_width == 8) {
+                    mask = "000";
+                }
+                else {
+                    std::cout << "Unexpected VLIW width " << vliw_width;
+                }
+            }
+
+            // Begin making the encoded instruction
+            std::string encoded_inst = "c0\t";
+            encoded_inst += mask;
+            encoded_inst += "\t";
+            // add the syllables
+            for (std::string non_nop_inst : syllables) {
+                encoded_inst += non_nop_inst;
+                encoded_inst += "\t";
+            }
+            encoded_inst.pop_back();
+            encoded_inst += "\n;;";
+            encodedVLIW.push_back(encoded_inst);
+            // reset the mask and syllables for next inst
+            syllables.clear();
+            mask = "";
+            instruction_index = 0;
+            last_instruction_index = 0;
+        }
+        // This is where we handle building the inst from the syllables
+        else {
+            std::string inst =  parseIndividualInst(instruction);
+
+            if (inst != "NOP") {
+                syllables.push_back(inst);
+                int diff_in_index = instruction_index - last_instruction_index;
+                last_instruction_index = instruction_index;
+
+                // create the mask depending on the width
+                if (vliw_width == 4) {
+                    switch (diff_in_index) {
+                        case 0:
+                            mask += "00";
+                            break;
+                        case 1:
+                            mask += "01";
+                            break;
+                        case 2:
+                            mask += "10";
+                            break;
+                        case 3:
+                            mask += "11";
+                            break;
+                    }
+                }
+                else if (vliw_width == 8) {
+                    switch (diff_in_index) {
+                        case 0:
+                            mask += "000";
+                            break;
+                        case 1:
+                            mask += "001";
+                            break;
+                        case 2:
+                            mask += "010";
+                            break;
+                        case 3:
+                            mask += "011";
+                            break;
+                        case 4:
+                            mask += "100";
+                            break;
+                        case 5:
+                            mask += "101";
+                            break;
+                        case 6:
+                            mask += "110";
+                            break;
+                        case 7:
+                            mask += "111";
+                            break;
+                    }
+                }
+                else {
+                    std::cout << "Unexpected VLIW width " << vliw_width;
+                }
+            }
+
+            instruction_index += 1;
+        }
+
+    }
     return encodedVLIW;
 }
 
