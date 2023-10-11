@@ -30,6 +30,51 @@ std::vector<std::string> hw1_instructions = {
     "add $r6 = $r3, $r6",
 };
 
+// overall resources of the machine
+std::unordered_map<std::string, int> resource_vector = 
+{{"alu", 4}, {"mul", 2}, {"ldw", 1}, {"stw", 1}, {"slots", 4}};
+
+// resources of certain commands
+// All table 3 use this one
+std::vector<std::string> alu_alias = {"mov", "add", "addcg", "and",
+"andc", "divs", "max", "min", "maxu", "minu", "or", "orc", "sh1add",
+"sh2add", "sh3add", "sh4add", "shl", "shr", "shru", "sub", "sxtb",
+"sxth", "zxtb", "zxth", "xor", // these are all table1
+"compeq", "cmpge", "cmpgeu", "cmpgt", "cmpgtu", "cmple", "cmpleu",
+"cmplt", "cmpltu", "cmpne", "nandl", "norl", "orl", "slct", "slctf", // table 3
+"mov"};  // https://edstem.org/us/courses/43502/discussion/3438852?comment=8304126
+std::vector<std::unordered_map<std::string, int>> alu_resources = 
+{{{"alu", 1}, {"mul", 0}, {"ldw", 0}, {"stw", 0}, {"slots", 1}}};
+
+std::vector<std::string> mpy_alias = {"mpy", "mpyhu", "mpyhs", "mpyll", "mpyllu",
+"mpylh", "mpylhu", "mpyhh", "mpyhhu", "mpyl", "mpylu", "mpyh"};
+std::vector<std::unordered_map<std::string, int>> mpy_resources = 
+{{{"alu", 0}, {"mul", 1}, {"ldw", 0}, {"stw", 0}, {"slots", 1}},
+{{"alu", 0}, {"mul", 1}, {"ldw", 0}, {"stw", 0}, {"slots", 0}}};
+
+std::vector<std::string> ldw_alias = {"ldw", "ldh", "ldhu", "ldb", "ldbu"};
+std::vector<std::unordered_map<std::string, int>> ldw_resources = 
+{{{"alu", 0}, {"mul", 0}, {"ldw", 1}, {"stw", 0}, {"slots", 1}},
+{{"alu", 0}, {"mul", 0}, {"ldw", 1}, {"stw", 0}, {"slots", 0}},
+{{"alu", 0}, {"mul", 0}, {"ldw", 1}, {"stw", 0}, {"slots", 0}}};
+
+std::vector<std::string> stw_alias = {"stw", "sth", "stb"};
+std::vector<std::unordered_map<std::string, int>> stw_resources = 
+{{{"alu", 0}, {"mul", 0}, {"ldw", 0}, {"stw", 1}, {"slots", 1}}};
+
+// Helpers to quickly check to see what opcode the instruction falls in
+bool isALUInst(std::string instruct) {
+    return std::find(alu_alias.begin(), alu_alias.end(), instruct) != alu_alias.end();
+}
+bool isMPYInst(std::string instruct) {
+    return std::find(mpy_alias.begin(), mpy_alias.end(), instruct) != mpy_alias.end();
+}
+bool isLDWInst(std::string instruct) {
+    return std::find(ldw_alias.begin(), ldw_alias.end(), instruct) != ldw_alias.end();
+}
+bool isSTWInst(std::string instruct) {
+    return std::find(stw_alias.begin(), stw_alias.end(), instruct) != stw_alias.end();
+}
 
 std::vector<std::string> prologue;
 std::vector<std::string> epilogue;
@@ -320,18 +365,19 @@ class TreeNode {
 public:
     int inst_numb;
     std::string instruct;
+    std::string opcode;
     int delay;
     std::vector<TreeNode*> children; // Children nodes
-    std::vector<TreeNode*> dependency;
+    std::vector<TreeNode*> nodes_before;
 
     // Constructor to initialize a node with metadata
-    TreeNode(int numb, std::string inst, int del) 
-    : inst_numb(numb), instruct(inst), delay(del) {}
+    TreeNode(int numb, std::string inst, std::string opcod, int del) 
+    : inst_numb(numb), instruct(inst), opcode(opcod), delay(del) {}
 
     // Method to add a child node to this node
     void addChild(TreeNode* child) {
         children.push_back(child);
-        child->dependency.push_back(this);
+        child->nodes_before.push_back(this);
     }
 
     // Function to get all subsequent nodes
@@ -374,8 +420,8 @@ public:
     Tree() : root(nullptr) {}
 
     // Method to add a node with metadata to the tree
-    TreeNode* addNode(int numb, std::string inst, int del) {
-        TreeNode* newNode = new TreeNode(numb, inst, del);
+    TreeNode* addNode(int numb, std::string inst, std::string opcod, int del) {
+        TreeNode* newNode = new TreeNode(numb, inst, opcod, del);
         all_nodes.push_back(newNode);
 
         // If the tree is empty, set the new node as the root
@@ -425,7 +471,9 @@ public:
 
         // Iterate through all nodes in the forest and find nodes that are not dependencies
         for (const TreeNode* node : all_nodes) {
-            if (std::find(nodes_from_main_root.begin(), nodes_from_main_root.end(), node) == nodes_from_main_root.end()) {
+            if (std::find(nodes_from_main_root.begin(), nodes_from_main_root.end(), node) == nodes_from_main_root.end()
+                & node->nodes_before.empty()) {
+                // filter for nodes not in main path and have no dependencies
                 rootNodes.push_back(const_cast<TreeNode*>(node));
             }
         }
@@ -435,6 +483,7 @@ public:
 
     void printForest() {
         std::vector<TreeNode*> rootNodes = findOtherRoots();
+        rootNodes.push_back(root);
         for (size_t i = 0; i < rootNodes.size(); ++i) {
             bool isLastRoot = (i == rootNodes.size() - 1);
             printBT("", rootNodes[i], isLastRoot);
@@ -530,8 +579,10 @@ public:
     void printDeepestPath(){
         std::vector<TreeNode*> path;
         path = findMaxDepth(root, path);
+        int delay = 0;
         for (TreeNode* node : path) {
-            std::cout << std::to_string(node->inst_numb) << "/" << node->inst_numb << " " << std::endl;
+            delay += node->delay;
+            std::cout << std::to_string(node->inst_numb) << "/" << delay << " " << std::endl;
         }
     }
 
@@ -572,7 +623,8 @@ Tree bulidTree(std::vector<std::unordered_map<std::string, std::string>>& instru
         // the variables to unpack from the dict
         int inst_numb;
         std::string inst;
-        int delay = 1;
+        int delay;
+        std::string op; 
         for (const auto& pair : unorderedMap) {
             
             const std::string& key = pair.first;
@@ -583,8 +635,22 @@ Tree bulidTree(std::vector<std::unordered_map<std::string, std::string>>& instru
             if (key == "instruct") {
                 inst = value;
             }
+            if (key == "op") {
+                op = value;
+            }
         }
-        TreeNode* node = tree.addNode(inst_numb, inst, delay);
+        if (isALUInst(op) | isSTWInst(op)) {
+            delay = 1;
+        } else if (isMPYInst(op)) {
+            delay = 2;
+        } else if (isLDWInst(op)) {
+            delay = 3;
+        }else {
+            std::cout << "WARNING, Unsuported opcode for vliwScheduler. Setting delay for " <<
+            op << " to be delay = 1" << std::endl;
+            delay = 1;
+        }
+        TreeNode* node = tree.addNode(inst_numb, inst, op, delay);
         
         instruction_tree.push_back(node);
         
@@ -635,7 +701,7 @@ bool areAllElementsInVector2(std::vector<TreeNode*>& vector1, std::vector<TreeNo
 }
 // WARNIGN, AFTER TESTING, CHANGE BACK TO instruct and not inst_Numb
 // WARNING, doesn't check above dependencies
-std::vector<int> scheduleOnSource(Tree tree) {
+std::vector<TreeNode*> scheduleOnSource(Tree tree) {
     std::vector<int> schedule;
     TreeNode* root = tree.root;
     // schedule.push_back(root->instruct); 
@@ -658,16 +724,16 @@ std::vector<int> scheduleOnSource(Tree tree) {
 
         // add current nodes it schedule if they're ready
         for (TreeNode* node : unsearched_nodes) {
-            std::vector<TreeNode*> dependency = node->dependency;
+            std::vector<TreeNode*> nodes_bef = node->nodes_before;
             if (std::find(scheduled_nodes.begin(), scheduled_nodes.end(), node) != scheduled_nodes.end()) {
                 // don't reschedule a node if it has already been scheduled!
                 continue;
             }
-            else if (dependency.empty()) {  // root node has no dependency
+            else if (nodes_bef.empty()) {  // root node has no dependency
                 schedule.push_back(node->inst_numb);
                 scheduled_nodes.push_back(node);
             }
-            else if (areAllElementsInVector2(dependency, scheduled_nodes)) {
+            else if (areAllElementsInVector2(nodes_bef, scheduled_nodes)) {
                 schedule.push_back(node->inst_numb);
                 scheduled_nodes.push_back(node);
             }
@@ -693,11 +759,7 @@ std::vector<int> scheduleOnSource(Tree tree) {
             unsearched_nodes.push_back(i);
             // std::cout << i->inst_numb << std::endl;
         }
-        
-                //         for (TreeNode* i : dependency){
-                //     std::cout << i ->inst_numb <<std::endl;
-                // }
-                // std::cout << "iter" << std::endl;
+
         for (TreeNode* i : scheduled_nodes){
             std::cout << i ->inst_numb <<std::endl;
         }
@@ -711,7 +773,28 @@ std::vector<int> scheduleOnSource(Tree tree) {
         std::cout << inst_numb << std::endl;
     }
 
+    return scheduled_nodes;
+}
+
+std::vector<std::string> listSchedAlg(std::vector<TreeNode*> topo_inst) {
+    std::vector<std::string> schedule;
+
+
+
     return schedule;
+}
+
+
+int findIndexInVectorOfVectors(const std::vector<std::vector<TreeNode*>>& vecOfVecs, TreeNode* value) {
+    for (size_t i = 0; i < vecOfVecs.size(); ++i) {
+        const std::vector<TreeNode*>& innerVector = vecOfVecs[i];
+        for (size_t j = 0; j < innerVector.size(); ++j) {
+            if (innerVector[j] == value) {
+                return i; // Return the index of the outer vector
+            }
+        }
+    }
+    return -1; // Return -1 if the value is not found
 }
 
 /*
@@ -728,7 +811,71 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
 {
     std::vector<std::string> scheduledVLIW;
 
-    /* TODO : Implement your code here */
+    std::vector<std::unordered_map<std::string, std::string>> parsed;
+//    parsed = parseInstructions(instructions);  // project1 actual input
+    parsed = parseInstructions(hw1_instructions);  // hw1 refrence input
+
+    std::vector<std::unordered_map<std::string, std::string>> dependencies;
+    dependencies = FindDependency(parsed);
+
+    Tree tree = bulidTree(dependencies);
+
+    tree.printDeepestPath();
+
+    std::vector<TreeNode*> initial_schedule;
+    switch (mode) {
+        case 0: 
+            // Source heruistic: first in program is first in tie
+            initial_schedule = scheduleOnSource(tree);
+            break;
+        
+   }
+
+   // Here is where we place the scheduling algorithm
+   std::vector<std::vector<TreeNode*>> algoirthm_sched;
+   for (TreeNode* node : initial_schedule) {
+        // line2 of algorithm to find delay from last predecessor
+        std::vector<TreeNode*> predecessors = node->nodes_before;
+        int index; 
+        int s_index = 0;
+        for (TreeNode* pred : predecessors) {
+            // Find the index of the predecessor and add the delay
+            index = findIndexInVectorOfVectors(algoirthm_sched, pred);
+            index += pred->delay;
+            // filter for the max predecessor delay
+            if (index > s_index) {
+                s_index = index;
+            }
+
+        }
+
+        // line 3 of algorithm
+        bool keep_searching_rt = true;
+        std::vector<std::unordered_map<std::string, int>> global_rt;
+        // create a variable to test what it'd look like if inst added at s_index
+        std::vector<std::unordered_map<std::string, int>> potential_rt;
+        while (keep_searching_rt) {
+            potential_rt = global_rt;
+
+            std::vector<std::unordered_map<std::string, int>> inst_resouces;
+            if (isALUInst(node->opcode)) {
+                inst_resouces = alu_resources;
+            } else if (isMPYInst(node->opcode)) {
+                inst_resouces = mpy_resources;
+            } else if (isLDWInst(node->opcode)) {
+                inst_resouces = ldw_resources;
+            } else if (isSTWInst(node->opcode)) {
+                inst_resouces = stw_resources;
+            }
+
+            for (std::unordered_map<std::string, int> resource : inst_resouces) {
+                // TODO add each part of resource map to potential map
+                // and see if the potential resource table items remain within
+                // bounds of resouce_vector
+            }
+        }
+
+   }
 
     return scheduledVLIW;
 }
@@ -755,29 +902,6 @@ int main(int argc, char *argv[])
    for (const std::string& value : instructions) {
     std::cout << std::to_string(count) << value << "\n";
     count += 1;
-   }
-   std::vector<std::unordered_map<std::string, std::string>> parsed;
-//    parsed = parseInstructions(instructions);  // project1 actual input
-    parsed = parseInstructions(hw1_instructions);  // hw1 refrence input
-
-   std::vector<std::unordered_map<std::string, std::string>> dependencies;
-   dependencies = FindDependency(parsed);
-
-   Tree tree = bulidTree(dependencies);
-
-   tree.printDeepestPath();
-
-   std::vector<int> initial_schedule;
-   switch (mode) {
-        case 0: 
-            // Source heruistic: first in program is first in tie
-            initial_schedule = scheduleOnSource(tree);
-            break;
-        
-   }
-
-   for (int i : initial_schedule) {
-    std::cout << i << std::endl;
    }
 
    /* Schedule instructions */
