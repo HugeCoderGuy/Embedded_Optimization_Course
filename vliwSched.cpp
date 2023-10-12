@@ -31,7 +31,7 @@ std::vector<std::string> hw1_instructions = {
 };
 
 // overall resources of the machine
-std::unordered_map<std::string, int> resource_vector = 
+std::unordered_map<std::string, int> system_resource_vector = 
 {{"alu", 4}, {"mul", 2}, {"ldw", 1}, {"stw", 1}, {"slots", 4}};
 
 // resources of certain commands
@@ -868,11 +868,58 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
                 inst_resouces = stw_resources;
             }
 
+            bool too_many_resources_used = false;
+            // iterate over each resource requirement of the opcode
             for (std::unordered_map<std::string, int> resource : inst_resouces) {
-                // TODO add each part of resource map to potential map
-                // and see if the potential resource table items remain within
-                // bounds of resouce_vector
+                int counter = 0;  // this is offset from s_index
+                // This is the current resources used for this step in sched
+                std::unordered_map<std::string, int> current_resource_in_sched = potential_rt[s_index + counter];
+
+                // unpack the current resources used and add that to the potential resource table
+                for (const auto& pair : resource) {
+                    const std::string& key = pair.first;
+                    int value = pair.second;
+                    
+                    // Check if the key exists in the target map
+                    if (current_resource_in_sched.find(key) != current_resource_in_sched.end()) {
+                        // Key exists, add the values
+                        current_resource_in_sched[key] += value;
+                    } else {
+                        // Key doesn't exist, create it
+                        current_resource_in_sched[key] = value;
+                    }
+                }
+                // now check if this current resource exceed system limits
+                for (const auto& pair : resource) {
+                    const std::string& key = pair.first;
+                    int value = pair.second;
+                    if (current_resource_in_sched[key] > system_resource_vector[key]) {
+                        too_many_resources_used = true;
+                    }
+                }
+                if (too_many_resources_used) {
+                    break;
+                } else {
+                    counter += 1;
+                }
             }
+            // Need to keep looking in resource table for
+            if (too_many_resources_used) {
+                s_index += 1;
+            } else {  // too_many_resc used flag low meaning we found a good spot in the schedule
+                keep_searching_rt = false;
+
+                // FIX THIS. ADD items from resources used vector to global rt table
+                for (auto& map : global_rt) {
+                    // Iterate over the key-value pairs in each map and modify the values
+                    for (auto& pair : map) {
+                        // For example, double the values in each map
+                        std::string key = pair.first;
+                        int value = pair.second;
+                    }
+                }
+            }
+            
         }
 
    }
