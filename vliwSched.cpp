@@ -776,15 +776,6 @@ std::vector<TreeNode*> scheduleOnSource(Tree tree) {
     return scheduled_nodes;
 }
 
-std::vector<std::string> listSchedAlg(std::vector<TreeNode*> topo_inst) {
-    std::vector<std::string> schedule;
-
-
-
-    return schedule;
-}
-
-
 int findIndexInVectorOfVectors(const std::vector<std::vector<TreeNode*>>& vecOfVecs, TreeNode* value) {
     for (size_t i = 0; i < vecOfVecs.size(); ++i) {
         const std::vector<TreeNode*>& innerVector = vecOfVecs[i];
@@ -795,6 +786,50 @@ int findIndexInVectorOfVectors(const std::vector<std::vector<TreeNode*>>& vecOfV
         }
     }
     return -1; // Return -1 if the value is not found
+}
+
+/* Finds the last cycle the instructions end at*/
+int findLengthOfSchedule(std::vector<std::unordered_map<std::string, int>> global_rt) {
+    int sched_count = 0;
+    int count = 0;
+    for (std::unordered_map<std::string, int> map : global_rt) {
+        bool all_zero = true;
+        for (const auto& pair : map) {
+            const std::string& key = pair.first;
+            int value = pair.second;
+            
+            // Check if the key exists in the target map
+            if (value != 0) {
+                sched_count = count;
+                all_zero = false;
+            } 
+        }
+        // if all resources used are zero, this must be where instructions end
+        if (all_zero) {
+            break;
+        }
+        count += 1;
+    }
+
+    return sched_count;
+}
+
+// Takes the schedule list of list of nodes and converts to printOutput param
+std::vector<std::string> formatNodeSchedToString(std::vector<std::vector<TreeNode*>> schedule, int length_of_schedule) {
+    std::vector<std::string> format_schedule; 
+    
+    for (int i = 0; i < length_of_schedule; i++) {
+        std::vector<TreeNode*> instruction_set = schedule[i];
+        if (!instruction_set.empty()) {
+            for (TreeNode* node : instruction_set) {
+                format_schedule.push_back(node->instruct);
+            }
+        }
+        format_schedule.push_back(";;");
+
+    }
+
+    return format_schedule;
 }
 
 /*
@@ -831,48 +866,79 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
         
    }
 
+    int empty_slots_initialize = 50;
+
    // Here is where we place the scheduling algorithm
    std::vector<std::vector<TreeNode*>> algoirthm_sched;
+   algoirthm_sched.resize(empty_slots_initialize);
+    std::vector<std::unordered_map<std::string, int>> global_rt;
+    std::unordered_map<std::string, int> empty_resources = 
+    {{"alu", 0}, {"mul", 0}, {"ldw", 0}, {"stw", 0}, {"slots", 0}};
+
+    for (int i = 0; i < empty_slots_initialize; i++) {
+        global_rt.push_back(empty_resources);
+    }
    for (TreeNode* node : initial_schedule) {
         // line2 of algorithm to find delay from last predecessor
         std::vector<TreeNode*> predecessors = node->nodes_before;
         int index; 
         int s_index = 0;
-        for (TreeNode* pred : predecessors) {
-            // Find the index of the predecessor and add the delay
-            index = findIndexInVectorOfVectors(algoirthm_sched, pred);
-            index += pred->delay;
-            // filter for the max predecessor delay
-            if (index > s_index) {
-                s_index = index;
+        if (!predecessors.empty()) {
+            for (TreeNode* pred : predecessors) {
+                // Find the index of the predecessor and add the delay
+                index = findIndexInVectorOfVectors(algoirthm_sched, pred);
+                if (index != -1) {
+                    index += pred->delay;
+                }
+                // filter for the max predecessor delay
+                if (index > s_index) {
+                    s_index = index;
+                }
             }
-
         }
 
         // line 3 of algorithm
         bool keep_searching_rt = true;
-        std::vector<std::unordered_map<std::string, int>> global_rt;
+
         // create a variable to test what it'd look like if inst added at s_index
         std::vector<std::unordered_map<std::string, int>> potential_rt;
         while (keep_searching_rt) {
             potential_rt = global_rt;
 
             std::vector<std::unordered_map<std::string, int>> inst_resouces;
-            if (isALUInst(node->opcode)) {
-                inst_resouces = alu_resources;
-            } else if (isMPYInst(node->opcode)) {
-                inst_resouces = mpy_resources;
-            } else if (isLDWInst(node->opcode)) {
-                inst_resouces = ldw_resources;
-            } else if (isSTWInst(node->opcode)) {
-                inst_resouces = stw_resources;
-            }
 
+            inst_resouces = alu_resources;
+            // for (const auto& map : inst_resouces) {
+            //     for (const auto& kvp : map) {
+            //         std::cout << kvp.first << ": " << kvp.second << " ";
+            //     }
+            //     std::cout << "here1" << std::endl;
+            // }
+            std::string opcode_to_check = node->opcode;
+
+            if (isMPYInst(opcode_to_check)) {
+                inst_resouces = mpy_resources;
+            } else if (isLDWInst(opcode_to_check)) {
+                inst_resouces = ldw_resources;
+            } else if (isSTWInst(opcode_to_check)) {
+                inst_resouces = stw_resources;
+            } else if (isALUInst(opcode_to_check)) {
+                inst_resouces = alu_resources;
+            } else {
+                std::cout << "Warning: Did not find op-code match for inst. Defaulting to alu resources used"<< std::endl;
+                inst_resouces = alu_resources;
+            }
+            
             bool too_many_resources_used = false;
+            // This is the current resources used for this step in sched
+            int counter = 0;  // this is offset from s_index
+
             // iterate over each resource requirement of the opcode
-            for (std::unordered_map<std::string, int> resource : inst_resouces) {
-                int counter = 0;  // this is offset from s_index
-                // This is the current resources used for this step in sched
+            for (int i = 0 ; i < inst_resouces.size() ; i++) {
+                std::unordered_map<std::string, int> resource = inst_resouces[0];
+
+
+                // TOTOTODO!!! This guy is being indexed badly
                 std::unordered_map<std::string, int> current_resource_in_sched = potential_rt[s_index + counter];
 
                 // unpack the current resources used and add that to the potential resource table
@@ -909,19 +975,37 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
             } else {  // too_many_resc used flag low meaning we found a good spot in the schedule
                 keep_searching_rt = false;
 
-                // FIX THIS. ADD items from resources used vector to global rt table
-                for (auto& map : global_rt) {
-                    // Iterate over the key-value pairs in each map and modify the values
-                    for (auto& pair : map) {
-                        // For example, double the values in each map
-                        std::string key = pair.first;
-                        int value = pair.second;
+                // add the instruction to the official schedule
+                algoirthm_sched[s_index].push_back(node);
+
+                // Now go through and add this instructs resources to the global_rt
+                int instruct_delay = inst_resouces.size();  // find the length of the vector, AKA delay
+                for (size_t i = s_index; i < s_index + instruct_delay && i < inst_resouces.size(); ++i) {
+                    for (auto& map : global_rt[s_index, s_index + instruct_delay]) {
+                        // Iterate over the key-value pairs in each map and modify the values
+                        for (const auto& kvp : inst_resouces[i - s_index]) {
+                            global_rt[i][kvp.first] += kvp.second;
+                        }
                     }
                 }
             }
             
         }
 
+   }
+   for (const auto& rtMap : global_rt) {
+        for (const auto& kvp : rtMap) {
+            std::cout << "Key: " << kvp.first << ": " << kvp.second << "/";
+        }
+        std::cout << std::endl;
+    }
+   int cycles_of_schedule = findLengthOfSchedule(global_rt); 
+   std::cout << cycles_of_schedule << std::endl;
+
+   scheduledVLIW = formatNodeSchedToString(algoirthm_sched, cycles_of_schedule);
+
+   for (std::string i : scheduledVLIW) {
+    std::cout << i << std::endl;
    }
 
     return scheduledVLIW;
@@ -958,3 +1042,4 @@ int main(int argc, char *argv[])
    printOutput(vliwSchedulerOutput, scheduledVLIW);
 }
 
+// TODO, the checks if resources slots are too full aren't working
