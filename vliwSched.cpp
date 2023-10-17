@@ -14,25 +14,57 @@
 /* BEGIN VALIDATION AGAINST HW1*/
 std::vector<std::string> hw1_instructions = {
     // "ignore $r6 ignore ignore ignore",  // this instruct offsets the others so they start at index=1
-    "mpy $r6 = $r4, $r8",
+    "mpy $r6 = $r4, $r8",  //0
     "ldw $r0 = 8[$r6]",
     "add $r8 = $r5, $r6",
     "ldw $r6 = 8[$r5]",
-    "add $r6 = $r8, $r7",
-    "add $r5 = $r8, $r2",
+    "add $r6 = $r8, $r7",  // 4
+    "add $r5 = $r8, $r2",  // 5
     "mpy $r1 = $r0, $r4",
     "ldw $r8 = 12[$r6]",
     "sub $r1 = $r8, $r0",
     "sub $r8 = $r5, $r7",
-    "add $r8 = $r6, $r8",
+    "add $r8 = $r6, $r8",  //10
     "sub $r2 = $r5, $r2",
     "sub $r1 = $r1, $r8",
     "ldw $r3 = 8[$r3]",
-    "add $r6 = $r3, $r6",
+    "add $r6 = $r3, $r6",  //14
 };
 
+// This is another validation set I used in testing. This is the actual instructions with added flags for inst_numb
+std::vector<std::string> official_instruct = {
+"ldw $r0.2 = 0x24[$r0.1]  ## 0",
+"ldw $r0.5 = 0x28[$r0.1]  ## 1",
+"ldw $r0.6 = 0x20[$r0.1]  ## 2",
+"ldw $r0.7 = 0x2c[$r0.1]  ## 3",
+"mpylu $r0.8 = $r0.2, $r0.5  ## 4",
+"mpyhs $r0.9 = $r0.2, $r0.5  ## 5",
+"add $r0.7 = $r0.6, $r0.7  ## 6",
+"add $r0.8 = $r0.8, $r0.9  ## 7",
+"add $r0.8 = $r0.8, $r0.7  ##  8",
+"ldw $r0.9 = 0x1c[$r0.1]  ## 9",
+"add $r0.7 = $r0.2, $r0.7  ## 10",
+"ldw $r0.10 = 0x18[$r0.1]  ## 11",
+"mpylu $r0.11 = $r0.9, $r0.6  ## 12",
+"mpyhs $r0.6 = $r0.9, $r0.6  ## 13",
+"add $r0.10 = $r0.10, $r0.7  ## 14",
+"add $r0.11 = $r0.11, $r0.6  ## 15",
+"add $r0.8 = $r0.8, $r0.11  ## 16",
+"add $r0.2 = $r0.2, $r0.8  ## 17",
+"add $r0.5 = $r0.5, $r0.8  ## 18",
+"add $r0.2 = $r0.2, $r0.5  ## 19",
+"ldw $r0.5 = 0x30[$r0.1]  ## 21",
+"add $r0.9 = $r0.9, $r0.7  ## 22",
+"add $r0.6 = $r0.5, $r0.3  ## 23",
+"add $r0.10 = $r0.10, $r0.6  ## 24",
+"add $r0.10 = $r0.10, $r0.2  ## 25",
+"add $r0.5 = $r0.5, $r0.3  ## 26",
+"add $r0.9 = $r0.9, $r0.5  ## 27",
+"add $r0.4 = $r0.10, $r0.9  ## 28",
+"mov $r0.3 = (_?1STRINGPACKET.1 + 0)  ## 29"};
 
-// hw1 matching resources for validation purposes. Leave commmented out on deliverable
+
+// // hw1 matching resources for validation purposes. Leave commmented out on deliverable
 // std::unordered_map<std::string, int> system_resource_vector = 
 // {{"alu", 1}, {"mul", 1}, {"ldw", 2}, {"stw", 1}, {"slots", 4}};
 
@@ -257,16 +289,12 @@ std::vector<std::unordered_map<std::string, std::string>> parseInstructions(std:
             count += 1;
         }
         inst_dict.push_back(temp_dict);
-
-        // Now, 'tokens' vector contains individual words
-        // for (const std::string& word : tokens) {
-        //     std::cout << word << std::endl;
-        // }
     }
     
     return inst_dict;
 }
 
+// Helper that is mainly used to split the dictoinary enteries with "," splitting the dependencies of nodes
 std::vector<std::string> splitString(const std::string& input, char delimiter) {
     std::vector<std::string> result;
     std::stringstream ss(input);
@@ -301,10 +329,9 @@ std::vector<std::unordered_map<std::string, std::string>> FindDependency(std::ve
             for (int i = instruct_numb + 1; i < parsed_instructions.size(); ++i) {
                 std::unordered_map<std::string, std::string> upcoming_instruct;
                 upcoming_instruct = parsed_instructions[i]; // Instruct we're comparing against
-                // Checks for that ldw/store dependency. There can only be one
                 
-                // handles LDW then STR (WAR) or STR then STR (WAW)
-                if (upcoming_instruct["op"] == "ldw" or upcoming_instruct["op"] == "stw") {
+                // handles LDW then STR (WAR) and WAW dependencies (stw then stw)
+                if (upcoming_instruct["op"] == "stw") {
                     map["dependency"] += upcoming_instruct["inst_numb"] + ",";
                     break;
                 }
@@ -321,7 +348,7 @@ std::vector<std::unordered_map<std::string, std::string>> FindDependency(std::ve
             }
         }
         
-        // Then handle the RAW and WAW dependency
+        // Then handle the RAW and WAW dependency for normal registers
         char delimiter = ',';
         std::vector<std::string> upcoming_read;
         // Again, iterate through all of the instructions following the current one
@@ -395,6 +422,7 @@ public:
     std::vector<TreeNode*> children; // Children nodes
     std::vector<TreeNode*> nodes_before;  // preceeding nodes
     int height;  // largest distance to bottom of treek (aka all delays summed)
+    int crit_resource;  // 1 for uses critical resource, 0 else
 
     // Constructor to initialize a node with metadata
     TreeNode(int numb, std::string inst, std::string opcod, int del) 
@@ -541,7 +569,11 @@ public:
     }
 
     void cleanTransEdgesFromTree() {
-        trimTransitiveEdges(root);
+        std::vector<TreeNode*> other_roots = findOtherRoots();
+        other_roots.push_back(root);
+        for (TreeNode* node : other_roots) {
+            trimTransitiveEdges(node);
+        }
     }
 
     // Helper to find how deep (aka high) a node path is
@@ -626,7 +658,7 @@ Tree bulidTree(std::vector<std::unordered_map<std::string, std::string>>& instru
 // Tree bulidTree(const auto& instruction) {
     std::vector<TreeNode*> instruction_tree;
 
-    Tree tree;
+    Tree tree;  // return value
 
     for (const auto& unorderedMap : instruction) {
         // the variables to unpack from the dict
@@ -650,18 +682,15 @@ Tree bulidTree(std::vector<std::unordered_map<std::string, std::string>>& instru
         }
         // find the delay depending on the opcode
         if (isALUInst(op) | isSTWInst(op)) {
-            // delay = 2;  // hw1 validation
-            delay = 1;
+            delay = alu_resources.size();
         } else if (isMPYInst(op)) {
-            // delay = 4;  // hw1 validation
-            delay = 2;
+            delay = mpy_resources.size();
         } else if (isLDWInst(op)) {
-            // delay = 5;  // hw1 validation
-            delay = 3;
+            delay = ldw_resources.size();
         }else {
             std::cout << "WARNING, Unsuported opcode for vliwScheduler. Setting delay for " <<
             op << " to be delay = 1" << std::endl;
-            delay = 1;
+            delay = alu_resources.size();
         }
         // make the node!
         TreeNode* node = tree.addNode(inst_numb, inst, op, delay);
@@ -700,19 +729,65 @@ Tree bulidTree(std::vector<std::unordered_map<std::string, std::string>>& instru
     return tree;
 }
 
+/* Next set of functions are used for flattenTree to apply heuristics*/
 // Custom comparison function to sort TreeNode* pointers based on inst_numb
 bool compareByInstNumb(const TreeNode* a, const TreeNode* b) {
     return a->inst_numb < b->inst_numb;  // lowest to highest
 }
 
-// to be used in std::sort
-bool compareByFanOut(const TreeNode* a, const TreeNode* b) {
-    return a->children.size() > b->children.size();  // count of children from largest to smallest
+// mode 1 to be used with sort
+bool compareByDepth(const TreeNode* a, const TreeNode* b) {
+    if (a->height == b->height) {
+        return a->inst_numb < b->inst_numb;  // lowest to highest
+    }
+    else {
+        return a->height > b->height;  // largest to smallest hight
+    }
 }
 
-// same but comparison by size
-bool compareByDepth(const TreeNode* a, const TreeNode* b) {
-    return a->height > b->height;  // largest to smallest hight
+// mode 2 to be used with sort
+bool compareByResource(const TreeNode* a, const TreeNode* b) {
+    if (a->crit_resource == b->crit_resource) {
+        return a->inst_numb < b->inst_numb;  // lowest to highest
+    }
+    else {
+        return a->crit_resource > b->crit_resource;  // largest to smallest hight
+    }
+}
+
+// mode 3 to be used with sort
+bool compareByFanOut(const TreeNode* a, const TreeNode* b) {
+    if (a->children.size() == b->children.size()) {
+        return a->inst_numb < b->inst_numb;  // lowest to highest
+    } else {
+        return a->children.size() > b->children.size();  // count of children from largest to smallest
+    }
+}
+
+// mode 4 to be used with sort
+bool compareByDepthAndResource(const TreeNode* a, const TreeNode* b) {
+    if (a->height == b->height) {
+        if (a->crit_resource == b->crit_resource) {  //source
+            return a->inst_numb < b->inst_numb;  
+        } else {  // resource heuristic
+            return a->children.size() > b->children.size();
+        }
+    } else {  // critical path
+        return a->height > b->height;  // largest to smallest hight
+    }
+}
+
+// mode 5 to be used with sort
+bool compareByDepthAndFanout(const TreeNode* a, const TreeNode* b) {
+    if (a->height == b->height) {
+        if (a->children.size() == b->children.size()) {  //source
+            return a->inst_numb < b->inst_numb;  
+        } else {  // fanout
+            return a->children.size() > b->children.size();
+        }
+    } else {  // critical path
+        return a->height > b->height;  // largest to smallest hight
+    }
 }
 
 // next two functions are helpers for vector comparison
@@ -736,29 +811,8 @@ bool anyElementsInVector2(std::vector<TreeNode*>& vector1, std::vector<TreeNode*
     return false;
 }
 
-// helper to re-order the unsearched nodes for the flatten tree funct
-void moveVectTwoToFrontVectOne(std::vector<TreeNode*>& unsearched_nodes, const std::vector<TreeNode*>& longest_path) {
-    // Create a temporary vector to store the reordered elements
-    std::vector<TreeNode*> reordered_nodes;
-
-    // Iterate through longest_path and add matching elements to reordered_nodes
-    for (const TreeNode* node : longest_path) {
-        auto it = std::find(unsearched_nodes.begin(), unsearched_nodes.end(), node);
-        if (it != unsearched_nodes.end()) {
-            reordered_nodes.push_back(*it);
-            unsearched_nodes.erase(it);
-        }
-    }
-
-    // Append the remaining unsearched_nodes to reordered_nodes
-    reordered_nodes.insert(reordered_nodes.end(), unsearched_nodes.begin(), unsearched_nodes.end());
-
-    // Assign the reordered_nodes back to unsearched_nodes
-    unsearched_nodes = reordered_nodes;
-}
-
 // identifies the most critical resource as defined by numb_uses / numb_of_that_resource
-std::vector<TreeNode*> findCriticality(std::vector<TreeNode*> all_nodes) {
+void findCriticality(std::vector<TreeNode*> all_nodes) {
     std::unordered_map<std::string, int> resources_used_count = {{"alu", 0}, {"ldw", 0}, {"stw", 0}, {"mul", 0}};
     
     // tally up the number of instructions using each resource
@@ -796,17 +850,14 @@ std::vector<TreeNode*> findCriticality(std::vector<TreeNode*> all_nodes) {
     std::vector<TreeNode*> nodes_with_crit_resource;
     for (TreeNode* node : all_nodes) {
         if (node->opcode == critical_op) {
-            nodes_with_crit_resource.push_back(node);
+            node->crit_resource = 1;
         }
     }
-
-    // This vector is used later to resort the flattening of the tree
-    return nodes_with_crit_resource;
 }
 
 /* flattens the dependency tree into a loopable instance. Input for list sched alg */
 std::vector<TreeNode*> flattenTree(Tree tree, bool use_deepest_path = false, 
-                                        std::vector<TreeNode*> nodes_using_crit_resource = {}, 
+                                        bool use_crit_resource = false, 
                                         bool use_fanout = false) {
     /* BRIEF: Takes every node in the tree and addes it to a vector to search. WHILE the
     vector is not empty, it begins by resorting the unsearched vector based on the heuristic.
@@ -817,7 +868,7 @@ std::vector<TreeNode*> flattenTree(Tree tree, bool use_deepest_path = false,
     TreeNode* root = tree.root;
 
     // helps control flow of what heuristic to use. Flags if ony a single heuristic is being used
-    bool using_single_heur = ((!nodes_using_crit_resource.empty()) + use_deepest_path + use_fanout) == 1;
+    bool using_single_heur = (use_crit_resource + use_deepest_path + use_fanout) == 1;
 
     std::vector<TreeNode*> unsearched_nodes;  // nodes to search next iteration
     std::vector<TreeNode*> scheduled_nodes;  // nodes that already have been scheduled
@@ -827,50 +878,26 @@ std::vector<TreeNode*> flattenTree(Tree tree, bool use_deepest_path = false,
     std::vector<TreeNode*> deepest_path;
     deepest_path = tree.findMaxDepth(tree.root, deepest_path);
 
-    // initialize the search with the root node
-    // unsearched_nodes.push_back(root);
-    // for (TreeNode* root_node : tree.findOtherRoots()) {
-    //     unsearched_nodes.push_back(root_node);
-    // }
-    // above comments are for old method I used. Now I initialize all nodes to be flattened immediately
-    unsearched_nodes = tree.all_nodes;
+    unsearched_nodes = tree.all_nodes;  // start off with all the nodes as unserached
     while (!unsearched_nodes.empty()) {
-        // This heuristic schedules based on order
+        /* First apply the heuristic */
+        // This heuristic schedules based on order (mode 0)
         std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByInstNumb);
 
-        // std::cout << "BEFORE" << std::endl;
-        // for (TreeNode* nod : unsearched_nodes) {
-        //     std::cout << nod->inst_numb << std::endl;
-        // }
         // apply the deepest path heuristic if it is a param
         if (use_deepest_path) {
             if (using_single_heur) {
-                // moveVectTwoToFrontVectOne(unsearched_nodes, deepest_path);
                 std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByDepth);
             } else if (use_fanout) {
-                std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByFanOut);
-                std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByDepth);
-                // moveVectTwoToFrontVectOne(unsearched_nodes, deepest_path);
+                std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByDepthAndFanout);  
             } else { // This is the critical path, resource, then source
-                // first you bring the crit resources forward
-                moveVectTwoToFrontVectOne(unsearched_nodes, nodes_using_crit_resource);
-                // then you bring the longest path forward in front of the resources
-                std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByDepth);
-                // moveVectTwoToFrontVectOne(unsearched_nodes, deepest_path);
-                // the deepest path and resources should already be in source order
+                std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByDepthAndResource);
             }
-            
-        }
-        else if (!nodes_using_crit_resource.empty()) {
-            std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByDepth);
-        }
-        else if (use_fanout) {
+        } else if (use_crit_resource) {
+            std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByResource);
+        } else if (use_fanout) {
             std::sort(unsearched_nodes.begin(), unsearched_nodes.end(), compareByFanOut);
         }
-        // std::cout << "DEBUG" << std::endl;
-        // for (TreeNode* nod : unsearched_nodes) {
-        //     std::cout << nod->inst_numb << std::endl;
-        // }
 
         scheduled_this_iteration.clear();
         // add current nodes it schedule if they're ready
@@ -883,10 +910,10 @@ std::vector<TreeNode*> flattenTree(Tree tree, bool use_deepest_path = false,
             else if (nodes_bef.empty()) {  // root node has no dependency
                 schedule.push_back(node->instruct);
                 scheduled_nodes.push_back(node);
+                scheduled_this_iteration.push_back(node);
             }
-            else if (areAllElementsInVector2(nodes_bef, scheduled_nodes) & !anyElementsInVector2(nodes_bef, scheduled_this_iteration)) {  
+            else if (areAllElementsInVector2(nodes_bef, scheduled_nodes)) {  
                 // first check is if all nodes before have already been scheduled
-                // second check is to make sure nodes before didn't just get scheduled (helps with heuristic)              
                 schedule.push_back(node->instruct);
                 scheduled_nodes.push_back(node);
                 scheduled_this_iteration.push_back(node);
@@ -895,16 +922,6 @@ std::vector<TreeNode*> flattenTree(Tree tree, bool use_deepest_path = false,
                 reschedule_search.push_back(node);
             }
         }
-        
-        // OLD METHOD AND CAN BE IGNORED
-        // for (TreeNode* search_node: unsearched_nodes) {
-        //     // take the children of the unsearched node and add the to the list
-        //     std::vector<TreeNode*> childs = search_node->children;
-        //     // The node has now officially been searched and can be dropped.
-        //     for (TreeNode* child : childs) {
-        //         reschedule_search.push_back(child);
-        //     }
-        // }
 
         // clear followed by add is to protect memory
         unsearched_nodes.clear();
@@ -919,6 +936,7 @@ std::vector<TreeNode*> flattenTree(Tree tree, bool use_deepest_path = false,
     return scheduled_nodes;
 }
 
+/* Helper to find where the node predecessor sits in the schedule. For list sched algorithm */
 int findIndexInVectorOfVectors(const std::vector<std::vector<TreeNode*>>& vecOfVecs, TreeNode* value) {
     for (size_t i = 0; i < vecOfVecs.size(); ++i) {
         const std::vector<TreeNode*>& innerVector = vecOfVecs[i];
@@ -931,17 +949,18 @@ int findIndexInVectorOfVectors(const std::vector<std::vector<TreeNode*>>& vecOfV
     return -1; // Return -1 if the value is not found
 }
 
-/* Finds the last cycle the instructions end at*/
+/* Finds the last cycle the instructions end at. Assumues last instruction occurs when no resources used */
 int findLengthOfSchedule(std::vector<std::unordered_map<std::string, int>> global_rt) {
     int sched_count = 0;
     int count = 0;
+    // iterate over the resource table looking for emptyness
     for (std::unordered_map<std::string, int> map : global_rt) {
         bool all_zero = true;
         for (const auto& pair : map) {
             const std::string& key = pair.first;
             int value = pair.second;
             
-            // Check if the key exists in the target map
+            // if value is not zero, this isn't a fully empty resource slot
             if (value != 0) {
                 sched_count = count;
                 all_zero = false;
@@ -963,10 +982,10 @@ std::vector<std::string> formatNodeSchedToString(std::vector<std::vector<TreeNod
     
     for (int i = 0; i < length_of_schedule + 1; i++) {
         std::vector<TreeNode*> instruction_set = schedule[i];
-        if (!instruction_set.empty()) {
+        if (!instruction_set.empty()) {  // empty schedule slots go straight to ;;
             for (TreeNode* node : instruction_set) {
-                std::string header = "\tc0\t";
-                header += node->instruct;
+                std::string header = "\tc0\t";  // needs this to compile 
+                header += node->instruct;  // add the instruction to the header
                 format_schedule.push_back(header);
             }
         }
@@ -989,61 +1008,60 @@ The function should return a vector of strings. Each string should be a schedule
 std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
                                        int mode)
 {
-    std::vector<std::string> scheduledVLIW;
+    std::vector<std::string> scheduledVLIW;  // return value
 
     std::vector<std::unordered_map<std::string, std::string>> parsed;
+    /* Next to lines of code are for testing */
     parsed = parseInstructions(instructions);  // project1 actual input
     // parsed = parseInstructions(hw1_instructions);  // hw1 instructions used for validation
+    // parsed = parseInstructions(official_instruct);  // now we have a list of the instruction strings
 
     std::vector<std::unordered_map<std::string, std::string>> dependencies;
-    dependencies = FindDependency(parsed);
+    dependencies = FindDependency(parsed);  // now we have unordered maps with meta data to represent nodes
 
-    Tree tree = bulidTree(dependencies);
+    Tree tree = bulidTree(dependencies);  // now nodes and edges are actually made
 
+    // prep nodes for heuristic comparison
+    findCriticality(tree.all_nodes);  // flag any nodes as critical resource users
     tree.findAllNodesHeight();  // set the height values of all nodes for heuristic
 
-
+    // identify the deepest past for the user
     std::cout << "The deepest path is: " << std::endl;
     tree.printDeepestPath();
 
     std::vector<TreeNode*> initial_schedule;
-    std::vector<TreeNode*> is_critical_node = findCriticality(tree.all_nodes);
     std::cout << "You have chosen the ";
     switch (mode) {
         case 0: 
             // Source heruistic: first in program is first in tie
             std::cout << "Source Heuristic" << std::endl;
-            initial_schedule = flattenTree(tree, false, {}, false);
+            initial_schedule = flattenTree(tree, false, false, false);
             break;
         case 1:
             // Critical Path - Source
             std::cout << "Critical path - Source" << std::endl;
-            initial_schedule = flattenTree(tree, true, {}, false);  // use deepest path is set true here
+            initial_schedule = flattenTree(tree, true, false, false);  // use deepest path is set true here
             break;
         case 2:
             // resource heuristic
             std::cout << "Resource - Source Heuristic" << std::endl;
-            initial_schedule = flattenTree(tree, false, is_critical_node, false); 
+            initial_schedule = flattenTree(tree, false, true, false); 
             break;
         case 3:
             std::cout << "Fanout - Source Heuristic" << std::endl;
-            initial_schedule = flattenTree(tree, false, {}, true); 
+            initial_schedule = flattenTree(tree, false, false, true); 
             break;
         case 4:
             std::cout << "Critical path - Resource - Source Heuristic" << std::endl;
-            initial_schedule = flattenTree(tree, true, is_critical_node, false); 
+            initial_schedule = flattenTree(tree, true, true, false); 
             break;
         case 5:
             std::cout << "Critical path - Fanout - Source Heuristic" << std::endl;
-            initial_schedule = flattenTree(tree, true, {}, true); 
+            initial_schedule = flattenTree(tree, true, false, true); 
             break;
    }
-   std::cout << "FLAT" << std::endl;
-   for (TreeNode* node : initial_schedule) {
-    std::cout << node->inst_numb << std::endl;
-   }
 
-    int empty_slots_initialize = 9000;  // TOD CHANGE THIS GUY
+    int empty_slots_initialize = 90000;  // Assumption, there will not be more than 90k cycles
 
    // Here is where we place the scheduling algorithm
    std::vector<std::vector<TreeNode*>> algoirthm_sched;
@@ -1052,9 +1070,11 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
     std::unordered_map<std::string, int> empty_resources = 
     {{"alu", 0}, {"mul", 0}, {"ldw", 0}, {"stw", 0}, {"slots", 0}};
 
+    // initialize the empty resource table with empty slots
     for (int i = 0; i < empty_slots_initialize; i++) {
         global_rt.push_back(empty_resources);
     }
+    // take the flattened tree and schedule them up !
    for (TreeNode* node : initial_schedule) {
         // line2 of algorithm to find delay from last predecessor
         std::vector<TreeNode*> predecessors = node->nodes_before;
@@ -1065,7 +1085,7 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
                 // Find the index of the predecessor and add the delay
                 index = findIndexInVectorOfVectors(algoirthm_sched, pred);
                 if (index != -1) {
-                    index += pred->delay;
+                    index += pred->delay;  // earliest slot it can be scheduled
                 }
                 // filter for the max predecessor delay
                 if (index > s_index) {
@@ -1107,8 +1127,6 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
             for (int i = 0 ; i < inst_resouces.size() ; i++) {
                 std::unordered_map<std::string, int> resource = inst_resouces[0];
 
-
-                // TOTOTODO!!! This guy is being indexed badly
                 std::unordered_map<std::string, int> current_resource_in_sched = potential_rt[s_index + counter];
 
                 // unpack the current resources used and add that to the potential resource table
@@ -1139,7 +1157,7 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
                     counter += 1;
                 }
             }
-            // Need to keep looking in resource table for
+            // Need to keep looking in resource table for space
             if (too_many_resources_used) {
                 s_index += 1;
             } else {  // too_many_resc used flag low meaning we found a good spot in the schedule
@@ -1148,20 +1166,16 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
                 // add the instruction to the official schedule
                 algoirthm_sched[s_index].push_back(node);
 
-                // Now go through and add this instructs resources to the global_rt
+                // Now go through and add this instructs resources to the global_rt since it found a spot
                 int instruct_delay = inst_resouces.size();  // find the length of the vector, AKA delay
                 int iteration = 0;
                 for (size_t i = s_index; i < s_index + instruct_delay && i < global_rt.size(); ++i) {
-                    
-                    // std::unordered_map<std::string, int> resources_used = global_rt[i];
-                // for (auto& map : global_rt[s_index, s_index + instruct_delay]) {
                     // Iterate over the key-value pairs in each map and modify the values
                     for (const auto& kvp : inst_resouces[iteration]) {  //[i - s_index]) {
                         global_rt[i][kvp.first] += kvp.second;
                     }
                     iteration += 1;
                 }
-                // }
             }
             
         }
@@ -1173,9 +1187,9 @@ std::vector<std::string>  scheduleVLIW(std::vector<std::string> instructions,
 
    scheduledVLIW = formatNodeSchedToString(algoirthm_sched, cycles_of_schedule);
 
-   for (std::string i : scheduledVLIW) {
-    std::cout << i << std::endl;
-   }
+//    for (std::string i : scheduledVLIW) {
+//     std::cout << i << std::endl;
+//    }
 
     return scheduledVLIW;
 }
@@ -1191,8 +1205,8 @@ int main(int argc, char *argv[])
  
    const char* inputFile = argv[1];
    const char* vliwSchedulerOutput = argv[2];
-   int mode = 0; // default value
-   mode = atoi(argv[3]);
+   int mode = atoi(argv[3]);
+//    mode = 3; // This is uncommented to act as default while using the debugger
 
    std::vector<std::string> instructions;
    std::vector<std::string> scheduledVLIW;
